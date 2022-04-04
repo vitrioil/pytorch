@@ -17,11 +17,11 @@ class CacheNode : public Node {
         str_(str) {}
   ~CacheNode() override = default;
 
-  const std::vector<Output>& operands() const override {
+  const std::vector<Value>& operands() const override {
     TORCH_INTERNAL_ASSERT(false, "Can't access operands of test node");
   }
 
-  const Output& operand(size_t i) const override {
+  const Value& operand(size_t i) const override {
     TORCH_INTERNAL_ASSERT(false, "Can't access operand[i] of test node");
   }
   const Shape& shape(size_t i) const override { return shape_; }
@@ -81,16 +81,16 @@ TEST(CacheTest, ShapeCacheTestForDynamicShape) {
   // enable dynamic shape
   FLAGS_ltc_enable_dynamic_shapes = true;
 
-  CacheNodeWithShape nodes[] = {
-    CacheNodeWithShape(Shape(c10::kFloat, {2, 4})),
-    CacheNodeWithShape(Shape(c10::kFloat, {4, 2})) };
+  CacheNodeWithShape a(Shape(c10::kFloat, {2, 4}));
+  CacheNodeWithShape b(Shape(c10::kFloat, {4, 2}));
+  CacheNodeWithShape* nodes[] = {&a, &b};
 
   /*
    * Make sure the cached shape for node (2, 4) is not used for node (4, 2)
    */
   for (auto& node : nodes) {
-    EXPECT_EQ(node.getShape(), node.GetOpShape([&]() {
-      return node.getShape();
+    EXPECT_EQ(node->getShape(), node->GetOpShape([&]() {
+      return node->getShape();
     }));
   }
 

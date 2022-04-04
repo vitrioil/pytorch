@@ -374,7 +374,7 @@ class DeviceContextArena {
     at::Tensor tensor =
         at::scalar_tensor(value, at::TensorOptions(scalar_type));
     BackendDataPtr device_data = TensorToDataHandle(tensor, device);
-    return MakeNode<DeviceData>(std::move(device_data));
+    return DeviceData::Create(std::move(device_data));
   }
 
   std::mutex lock_;
@@ -475,6 +475,14 @@ void LazyGraphExecutor::MarkStep(const BackendDevice& device) {
   DeviceContextArena::Get()->MarkStep(device);
   ScopePusher::ResetScopes();
   g_tls_data.Reset();
+
+  // Values need to be reset because Value::node() may not
+  // return a valid node in the next iteration
+  auto tensors = GetLiveTensors(&device);
+  for (LazyTensorPtr& tensor : tensors) {
+    tensor->ResetIrValue();
+  }
+  Node::ClearNodeList();
 }
 
 void LazyGraphExecutor::WaitDeviceOps(c10::ArrayRef<BackendDevice> devices) {
@@ -526,7 +534,7 @@ Value LazyGraphExecutor::GetDeviceDataIrValue(
   BackendDataPtr data = GetDeviceData(value, type, device);
   data->SetInfo(std::make_shared<DeviceDataInfo>(
       /*tensor_id=*/-1, /*read_only=*/true));
-  return MakeNode<DeviceData>(std::move(data));
+  return DeviceData::Create(std::move(data));
 }
 
 Value LazyGraphExecutor::GetIrValueForScalarFromCodegen(const at::Scalar& value) {
@@ -536,7 +544,7 @@ Value LazyGraphExecutor::GetIrValueForScalarFromCodegen(const at::Scalar& value)
   auto cpu_device = getBackend()->GetBackendDevice(c10::Device(c10::kCPU, 0));
   BackendDataPtr data = getBackend()->MakeComputationDataFromScalar(value, cpu_device);
   data->SetInfo(std::make_shared<DeviceDataInfo>(/*tensor_id=*/-1, /*read_only=*/true));
-  return MakeNode<DeviceData>(std::move(data));
+  return DeviceData::Create(std::move(data));
 }
 
 Value LazyGraphExecutor::GetIrValueForScalar(
@@ -719,8 +727,8 @@ LazyGraphExecutor::PostOrderData LazyGraphExecutor::RunPostOrder(
   std::vector<Node*> roots;
   roots.reserve(indices.size());
   for (auto index : indices) {
-    Value ir_value = tensors.at(index)->CurrentIrValue();
-    roots.push_back(ir_value.node.get());
+    const Value ir_value = tensors.at(index)->CurrentIrValue();
+    roots.push_back(ir_value.node().get());
   }
   PostOrderData po_data;
   po_data.post_order = Util::ComputePostOrder(roots, &po_data.emission_map);
