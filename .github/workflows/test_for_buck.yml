@@ -1,0 +1,41 @@
+name: for-buck
+
+on:
+  pull_request:
+
+
+defaults:
+  run:
+    shell: bash -e -l {0}
+
+jobs:
+
+  test-for-buck:
+    runs-on: ubuntu-latest
+    env:
+      JOB_BASE_NAME: ubuntu-latest-android-tests
+    steps:
+      - name: Setup miniconda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          python-version: 3.8
+          activate-environment: build
+
+      - name: Install dependencies
+        run: |
+          conda install -y \
+            cffi \
+            cmake \
+            mkl \
+            mkl-include \
+            ninja \
+            numpy \
+            pyyaml \
+            requests \
+            setuptools \
+            typing_extensions
+
+      - name: Do stuff
+        run: |
+          clang --version
