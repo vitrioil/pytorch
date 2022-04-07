@@ -610,32 +610,6 @@ class TestAssert(TestCase):
             ms(torch.tensor([False], dtype=torch.bool))
 
 
-class TestCrashHandler(TestCase):
-    @unittest.skipIf(TEST_WITH_ASAN, "ASAN disables the crash handler's signal handler")
-    @unittest.skipIf(not has_breakpad(), "Built without breakpad")
-    def test_python_exception_writing(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            torch.utils._crash_handler.enable_minidumps(temp_dir)
-            torch.utils._crash_handler.enable_minidumps_on_exceptions()
-
-            files = os.listdir(temp_dir)
-            self.assertEqual(len(files), 0)
-
-            f = io.StringIO()
-            with contextlib.redirect_stderr(f):
-                try:
-                    @torch.jit.script
-                    def x(i: int):
-                        return i + "2"  # type: ignore[operator]
-                except RuntimeError as e:
-                    pass
-
-            files = os.listdir(temp_dir)
-            self.assertEqual(len(files), 1)
-            self.assertTrue(files[0].endswith(".dmp"))
-            torch.utils._crash_handler.disable_minidumps()
-
-
 @unittest.skipIf(IS_SANDCASTLE, "cpp_extension is OSS only")
 class TestStandaloneCPPJIT(TestCase):
     def test_load_standalone(self):
