@@ -5,9 +5,11 @@ from typing import Dict, List, Set, Tuple
 
 import torch
 import torch.distributed as dist
+from torch.distributed.rpc.utils import group_membership_management
 
 from . import api
 from . import constants as rpc_constants
+from . import utils
 
 
 BackendValue = collections.namedtuple(
@@ -386,44 +388,29 @@ def _tensorpipe_init_backend_handler(store, name, rank, world_size, rpc_backend_
         # Validate devices and device_maps locally for current rank
         local_devices = list(_tensorpipe_check_local_device_maps(name, device_count, rpc_backend_options))
 
-        token_key = "RpcGroupManagementToken"
-        token_location = f"TokenOnWorker{rank}"
-        while True:
-            # Retrieve token from store to signal start of rank join/leave critical section
-            returned = store.compare_set(token_key, "", token_location).decode()
-            if returned == token_location:
-                # Construct TPAgent with empty reverse_device_map and devices
-                # these properties will be updated after initialization
-                agent = TensorPipeAgent(
-                    store,
-                    name,
-                    rank,
-                    world_size,
-                    rpc_backend_options,
-                    {},
-                    local_devices,
-                )
-                api._init_rpc_states(agent)
+        with utils.group_membership_management(store, name):
+            # Construct TPAgent with empty reverse_device_map and devices
+            # these properties will be updated after initialization
+            agent = TensorPipeAgent(
+                store,
+                name,
+                rank,
+                world_size,
+                rpc_backend_options,
+                {},
+                [],
+            )
+            api._init_rpc_states(agent)
 
-                try:
-                    # Notify all workers in group this rank has joined and set devices and reverse_device_map
-                    # This is a synchronous operation that completes once all existing ranks are updated
-                    _set_devices_and_reverse_device_map(agent, rank, rpc_backend_options.device_maps)
-                except Exception:
-                    api.shutdown(graceful=False)
-                    raise
-
-                # Finish initialization
-                break
-            else:
-                # Store will wait for the token to be released based on the timeout set in backend options
-                store.wait([returned])
-
-        # Update from store to signal end of rank join/leave critical section
-        store.set(token_key, "")
-        # Other will wait for this token to be set before they execute
-        store.set(token_location, "Done")
-        return agent
+            try:
+                # TODO: Notify all workers in group this rank has joined and set devices and reverse_device_map
+                # This is a synchronous operation that completes once all existing ranks are updated
+                _set_devices_and_reverse_device_map(agent, rank, rpc_backend_options.device_maps)
+                pass
+            except Exception:
+                # api.shutdown()
+                raise
+            return agent
 
 register_backend(
     "TENSORPIPE",
